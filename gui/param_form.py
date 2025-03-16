@@ -1,80 +1,85 @@
-# -*- coding: utf-8 -*-
-# gui/tooltip_editor.py
+# gui/param_form.py
 
-import os
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-    QTextEdit, QLabel, QMessageBox, QFileDialog
+    QWidget, QFormLayout, QLineEdit, QCheckBox, QSpinBox, QLabel
 )
 from PySide6.QtCore import Qt
 
-class TooltipEditorDialog(QDialog):
+class ParamForm(QWidget):
     """
-    Einfaches Dialogfenster, um 'tooltips.md' zu laden, zu bearbeiten und 
-    wieder zu speichern. Die Syntax: 
-        #PARAM_QUALITY
-        Hier die Beschreibung ...
-        #PARAM_SOMETHING
-        Hier der nächste Tooltip ...
+    Dynamisch erzeugte Eingabefelder für die Format-Parameter.
+
+    Aufrufbeispiel:
+        param_def = {
+            "PARAM_QUALITY": {"type": "int", "default": 80, "min": 0, "max": 100},
+            "PARAM_OPTIMIZE": {"type": "bool", "default": True}
+        }
+        form = ParamForm(param_def)
     """
-    def __init__(self, tooltip_file_path, parent=None):
+
+    def __init__(self, params: dict, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Tooltips bearbeiten")
+        self.params = params  # Dictionary der Parameter-Definitionen
+        self.form_layout = QFormLayout(self)
+        self.form_layout.setLabelAlignment(Qt.AlignRight)
 
-        self.tooltip_file_path = tooltip_file_path
+        # Hier speichern wir die Widgets und ihre Keys, 
+        # um später die Werte auszulesen:
+        self.widgets_by_key = {}
 
-        layout = QVBoxLayout(self)
+        self.build_form()
 
-        self.label_info = QLabel("Bearbeite hier den Inhalt von tooltips.md:")
-        layout.addWidget(self.label_info)
+    def build_form(self):
+        """Erzeugt pro Parameter ein passendes Widget."""
+        for key, definition in self.params.items():
+            param_type = definition.get("type")
+            default_val = definition.get("default")
 
-        self.text_edit = QTextEdit()
-        layout.addWidget(self.text_edit)
+            if param_type == "int":
+                widget = QSpinBox()
+                widget.setRange(definition.get("min", 0), definition.get("max", 100))
+                widget.setValue(default_val)
+                self.form_layout.addRow(key, widget)
+                self.widgets_by_key[key] = widget
 
-        # Button-Leiste
-        button_layout = QHBoxLayout()
-        self.btn_load = QPushButton("Laden")
-        self.btn_load.clicked.connect(self.load_tooltips)
-        button_layout.addWidget(self.btn_load)
+            elif param_type == "bool":
+                widget = QCheckBox()
+                widget.setChecked(bool(default_val))
+                self.form_layout.addRow(key, widget)
+                self.widgets_by_key[key] = widget
 
-        self.btn_save = QPushButton("Speichern")
-        self.btn_save.clicked.connect(self.save_tooltips)
-        button_layout.addWidget(self.btn_save)
+            elif param_type == "list_of_int_tuples":
+                # Nur ein Label als Platzhalter – 
+                # in Wirklichkeit bräuchte man evtl. 
+                # eine komplexere UI (Tabelle/Mehrfach-Eingabefelder).
+                label = QLabel(f"{default_val}")
+                self.form_layout.addRow(key, label)
+                self.widgets_by_key[key] = label
 
-        self.btn_load_other_file = QPushButton("Andere Datei...")
-        self.btn_load_other_file.clicked.connect(self.load_other_file)
-        button_layout.addWidget(self.btn_load_other_file)
+            else:
+                # Standard-Case: String
+                line = QLineEdit(str(default_val))
+                self.form_layout.addRow(key, line)
+                self.widgets_by_key[key] = line
 
-        layout.addLayout(button_layout)
-
-        self.resize(600, 400)
-        self.load_tooltips()  # Beim Öffnen direkt laden
-
-    def load_tooltips(self):
-        """Lädt den Inhalt der tooltips.md (sofern vorhanden) in das Textfeld."""
-        if os.path.isfile(self.tooltip_file_path):
-            try:
-                with open(self.tooltip_file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                self.text_edit.setPlainText(content)
-            except Exception as e:
-                QMessageBox.critical(self, "Fehler", f"Konnte Datei nicht lesen:\n{e}")
-        else:
-            self.text_edit.setPlainText("# Noch keine Tooltips hinterlegt.\n")
-
-    def save_tooltips(self):
-        """Speichert den Inhalt aus dem Textfeld in die tooltips.md."""
-        content = self.text_edit.toPlainText()
-        try:
-            with open(self.tooltip_file_path, "w", encoding="utf-8") as f:
-                f.write(content)
-            QMessageBox.information(self, "Gespeichert", "Tooltips erfolgreich gespeichert.")
-        except Exception as e:
-            QMessageBox.critical(self, "Fehler", f"Konnte Datei nicht speichern:\n{e}")
-
-    def load_other_file(self):
-        """Ermöglicht das Laden einer anderen Markdown-Datei."""
-        new_path, _ = QFileDialog.getOpenFileName(self, "Tooltips-Datei auswählen", "", "Markdown-Datei (*.md)")
-        if new_path:
-            self.tooltip_file_path = new_path
-            self.load_tooltips()
+    def get_values(self):
+        """
+        Liest die Nutzer-Eingaben aus und 
+        liefert ein Dict: {param_key: user_value}
+        """
+        result = {}
+        for key, widget in self.widgets_by_key.items():
+            if isinstance(widget, QSpinBox):
+                result[key] = widget.value()
+            elif isinstance(widget, QCheckBox):
+                result[key] = widget.isChecked()
+            elif isinstance(widget, QLabel):
+                # Hier ggf. Parsen, falls wir was Editierbares bräuchten
+                result[key] = widget.text()  
+                # oder man implementiert separate Edit-Fenster
+            elif isinstance(widget, QLineEdit):
+                result[key] = widget.text()
+            else:
+                # Fallback
+                result[key] = None
+        return result
